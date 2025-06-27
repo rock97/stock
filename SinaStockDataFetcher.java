@@ -16,8 +16,7 @@ import java.util.List;
  */
 public class SinaStockDataFetcher {
 
-    private static final String SINA_STOCK_HISTORY_API =
-            "https://quotes.sina.cn/cn/api/jsonp_v2.php/var%%20_%s_day_data=%%20/CN_MarketDataService.getKLineData";
+    private static final String SINA_STOCK_HISTORY_API = "https://quotes.sina.cn/cn/api/jsonp_v2.php/var%%20_%s_day_data=%%20/CN_MarketDataService.getKLineData";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     /**
@@ -25,7 +24,7 @@ public class SinaStockDataFetcher {
      *
      * @param stockCode 股票代码（如：sh600000或sz000001）
      * @param startDate 开始日期（格式：yyyy-MM-dd）
-     * @param endDate 结束日期（格式：yyyy-MM-dd）
+     * @param endDate   结束日期（格式：yyyy-MM-dd）
      * @return 股票历史日线数据列表
      */
     public List<StockDailyData> fetchStockDailyData(String stockCode, LocalDate startDate, LocalDate endDate) {
@@ -40,7 +39,6 @@ public class SinaStockDataFetcher {
             // 解析响应数据
             result = parseResponseData(responseData);
 
-            System.out.println("成功获取" + stockCode + "的日线数据，共" + result.size() + "条记录");
         } catch (Exception e) {
             System.err.println("获取股票日线数据失败: " + e.getMessage());
             e.printStackTrace();
@@ -121,7 +119,9 @@ public class SinaStockDataFetcher {
             String jsonData = responseData.substring(startIndex, endIndex + 1);
 
             // 简单解析JSON数组（避免引入额外的JSON库依赖）
-            // 格式: [{"day":"2023-01-01","open":"10.00","high":"10.50","low":"9.80","close":"10.20","volume":"12345678"}, ...]
+            // 格式:
+            // [{"day":"2023-01-01","open":"10.00","high":"10.50","low":"9.80","close":"10.20","volume":"12345678"},
+            // ...]
             String[] items = jsonData.split("\\},\\{");
 
             for (String item : items) {
@@ -143,8 +143,7 @@ public class SinaStockDataFetcher {
                             parseDouble(high),
                             parseDouble(low),
                             parseDouble(close),
-                            parseLong(volume)
-                    );
+                            parseLong(volume));
                     result.add(dailyData);
                 }
             }
@@ -214,11 +213,12 @@ public class SinaStockDataFetcher {
      * 将股票代码和涨跌链接字符串保存到CSV文件
      *
      * @param stockCode 股票代码
-     * @param dataList 股票数据列表
-     * @param filePath 保存文件路径
-     * @param append 是否追加到现有文件
+     * @param dataList  股票数据列表
+     * @param filePath  保存文件路径
+     * @param append    是否追加到现有文件
      */
-    public void saveToCSV(String stockCode, String stockName, List<StockDailyData> dataList, String filePath, boolean append) {
+    public void saveToCSV(String stockCode, String stockName, List<StockDailyData> dataList, String filePath,
+            boolean append) {
         if (dataList == null || dataList.isEmpty()) {
             System.out.println("没有数据可保存");
             return;
@@ -256,12 +256,12 @@ public class SinaStockDataFetcher {
      * 股票日线数据类
      */
     public static class StockDailyData {
-        private final String date;      // 日期
-        private final double open;      // 开盘价
-        private final double high;      // 最高价
-        private final double low;       // 最低价
-        private final double close;     // 收盘价
-        private final long volume;      // 成交量
+        private final String date; // 日期
+        private final double open; // 开盘价
+        private final double high; // 最高价
+        private final double low; // 最低价
+        private final double close; // 收盘价
+        private final long volume; // 成交量
         private final String priceChange; // 收盘红绿（上涨、下跌、平）
 
         public StockDailyData(String date, double open, double high, double low, double close, long volume) {
@@ -277,7 +277,7 @@ public class SinaStockDataFetcher {
         /**
          * 计算价格变化状态
          *
-         * @param open 开盘价
+         * @param open  开盘价
          * @param close 收盘价
          * @return 价格变化状态：2（涨停）、1（上涨）、0（下跌或平）
          */
@@ -287,7 +287,7 @@ public class SinaStockDataFetcher {
 
             // 涨停判断（一般A股涨停为10%，指数无涨跌幅限制）
             if (changePercent >= 9.9) { // 使用9.5%作为涨停判断阈值，考虑到可能有小数点误差
-                return "2";
+                return "1";
             } else if (close > open) {
                 return "1";
             } else {
@@ -350,20 +350,20 @@ public class SinaStockDataFetcher {
 
         // 设置日期范围
         LocalDate endDate = LocalDate.now(); // 今天
-        LocalDate startDate = endDate.minusMonths(3); // 3个月前
+        LocalDate startDate = endDate.minusMonths(1); // 3个月前
 
         System.out.println("获取时间范围: " + startDate.format(DateTimeFormatter.ISO_LOCAL_DATE) +
                 " 至 " + endDate.format(DateTimeFormatter.ISO_LOCAL_DATE));
-
+        String dataStr = endDate.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         // 所有股票数据保存到同一个文件
-        String allStocksFilePath = "./all_stocks_pattern.csv";
+        String allStocksFilePath = "./" + dataStr + "_all_stocks_pattern.csv";
 
         // 为每只股票获取数据并保存到同一个文件
         for (int i = 0; i < stockInfos.size(); i++) {
             StockInfo stockInfo = stockInfos.get(i);
             String stockCode = stockInfo.getCode();
             String stockName = stockInfo.getName();
-            System.out.println("\n正在获取 " + stockName + " 的日线数据...");
+            System.out.println("\n正在获取 " + i + " " + stockName + " 的日线数据...");
 
             // 获取股票日线数据
             List<StockDailyData> dataList = fetcher.fetchStockDailyData(stockCode, startDate, endDate);
@@ -372,11 +372,6 @@ public class SinaStockDataFetcher {
                 System.out.println("未获取到 " + stockName + " 的数据");
                 continue;
             }
-
-            // 生成并打印涨跌链接字符串
-            String priceChangeString = fetcher.generatePriceChangeString(dataList);
-            System.out.println(stockName + " 涨跌字符串: " + priceChangeString);
-
             // 保存到同一个CSV文件，第一个股票不追加，后续股票追加
             boolean append = (i > 0); // 第一个股票不追加，后续股票追加
             fetcher.saveToCSV(stockCode, stockName, dataList, allStocksFilePath, append);
@@ -393,7 +388,7 @@ public class SinaStockDataFetcher {
 
         // 创建测试数据
         StockDailyData data1 = new StockDailyData("2023-01-01", 100.0, 110.0, 95.0, 105.0, 1000000); // 上涨5%
-        StockDailyData data2 = new StockDailyData("2023-01-02", 100.0, 90.0, 85.0, 90.0, 1000000);  // 下跌10%
+        StockDailyData data2 = new StockDailyData("2023-01-02", 100.0, 90.0, 85.0, 90.0, 1000000); // 下跌10%
         StockDailyData data3 = new StockDailyData("2023-01-03", 100.0, 115.0, 100.0, 110.0, 1000000); // 上涨10%（涨停）
         StockDailyData data4 = new StockDailyData("2023-01-04", 100.0, 100.0, 100.0, 100.0, 1000000); // 平
 
