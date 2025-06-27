@@ -291,7 +291,7 @@ public class SinaStockDataFetcher {
             double changePercent = (close - open) / open * 100;
             
             // 涨停判断（一般A股涨停为10%，指数无涨跌幅限制）
-            if (changePercent >= 9.5) { // 使用9.5%作为涨停判断阈值，考虑到可能有小数点误差
+            if (changePercent >= 9.9) { // 使用9.5%作为涨停判断阈值，考虑到可能有小数点误差
                 return "2";
             } else if (close > open) {
                 return "1";
@@ -347,15 +347,10 @@ public class SinaStockDataFetcher {
         
         // 测试涨停判断逻辑
         testPriceChangeLogic();
-        
+        AllStockCode allStockCode = new AllStockCode();
+
         // 定义要获取的股票列表
-        String[] stockCodes = {
-            "sh000001", // 上证指数
-            "sz399001", // 深证成指
-            "sh601318", // 中国平安
-            "sh600519", // 贵州茅台
-            "sz000858"  // 五粮液
-        };
+        List<String> stockCodes = allStockCode.getAllStockCodes();
         
         // 设置日期范围
         LocalDate endDate = LocalDate.now(); // 今天
@@ -368,8 +363,8 @@ public class SinaStockDataFetcher {
         String allStocksFilePath = "./all_stocks_pattern.csv";
         
         // 为每只股票获取数据并保存到同一个文件
-        for (int i = 0; i < stockCodes.length; i++) {
-            String stockCode = stockCodes[i];
+        for (int i = 0; i < stockCodes.size(); i++) {
+            String stockCode = stockCodes.get(i);
             System.out.println("\n正在获取 " + stockCode + " 的日线数据...");
             
             // 获取股票日线数据
