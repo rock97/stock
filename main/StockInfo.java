@@ -1,3 +1,4 @@
+package main;
 /**
  * @author lizhihua03 <lizhihua03@kuaishou.com>
  * Created on 2025-06-27
