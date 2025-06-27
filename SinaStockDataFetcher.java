@@ -1,0 +1,414 @@
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 新浪财经股票日线数据获取工具
+ * 可以获取指定股票的历史日线数据
+ */
+public class SinaStockDataFetcher {
+
+    private static final String SINA_STOCK_HISTORY_API = "https://quotes.sina.cn/cn/api/jsonp_v2.php/var%%20_%s_day_data=%%20/CN_MarketDataService.getKLineData";
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    /**
+     * 获取股票历史日线数据
+     * 
+     * @param stockCode 股票代码（如：sh600000或sz000001）
+     * @param startDate 开始日期（格式：yyyy-MM-dd）
+     * @param endDate   结束日期（格式：yyyy-MM-dd）
+     * @return 股票历史日线数据列表
+     */
+    public List<StockDailyData> fetchStockDailyData(String stockCode, LocalDate startDate, LocalDate endDate) {
+        List<StockDailyData> result = new ArrayList<>();
+        try {
+            // 构建请求URL
+            String requestUrl = buildRequestUrl(stockCode, startDate, endDate);
+            
+            // 发送HTTP请求
+            String responseData = sendHttpRequest(requestUrl);
+            
+            // 解析响应数据
+            result = parseResponseData(responseData);
+            
+            System.out.println("成功获取" + stockCode + "的日线数据，共" + result.size() + "条记录");
+        } catch (Exception e) {
+            System.err.println("获取股票日线数据失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 构建请求URL
+     */
+    private String buildRequestUrl(String stockCode, LocalDate startDate, LocalDate endDate) {
+        String formattedStartDate = startDate.format(DATE_FORMATTER);
+        String formattedEndDate = endDate.format(DATE_FORMATTER);
+        
+        // 新浪财经API需要的股票代码格式转换
+        String sinaStockCode = convertToSinaStockCode(stockCode);
+        
+        return String.format(SINA_STOCK_HISTORY_API, sinaStockCode) + 
+               "?symbol=" + sinaStockCode + 
+               "&scale=240" + // 日K线
+               "&ma=5" + // 5日均线
+               "&datalen=60" + // 最大数据长度
+               "&from=" + formattedStartDate + 
+               "&to=" + formattedEndDate;
+    }
+
+    /**
+     * 转换股票代码为新浪财经API格式
+     */
+    private String convertToSinaStockCode(String stockCode) {
+        // 如果已经是新浪格式，直接返回
+        if (stockCode.startsWith("sh") || stockCode.startsWith("sz")) {
+            return stockCode;
+        }
+        
+        // 上证股票以6开头，深证股票以0或3开头
+        if (stockCode.startsWith("6")) {
+            return "sh" + stockCode;
+        } else if (stockCode.startsWith("0") || stockCode.startsWith("3")) {
+            return "sz" + stockCode;
+        }
+        
+        // 默认返回原始代码
+        return stockCode;
+    }
+
+    /**
+     * 发送HTTP请求获取数据
+     */
+    private String sendHttpRequest(String requestUrl) throws IOException {
+        URL url = new URL(requestUrl);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0");
+        
+        StringBuilder response = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                response.append(line);
+            }
+        }
+        
+        return response.toString();
+    }
+
+    /**
+     * 解析响应数据
+     */
+    private List<StockDailyData> parseResponseData(String responseData) {
+        List<StockDailyData> result = new ArrayList<>();
+        
+        // 提取JSON数据部分
+        int startIndex = responseData.indexOf("[");
+        int endIndex = responseData.lastIndexOf("]");
+        
+        if (startIndex >= 0 && endIndex > startIndex) {
+            String jsonData = responseData.substring(startIndex, endIndex + 1);
+            
+            // 简单解析JSON数组（避免引入额外的JSON库依赖）
+            // 格式: [{"day":"2023-01-01","open":"10.00","high":"10.50","low":"9.80","close":"10.20","volume":"12345678"}, ...]
+            String[] items = jsonData.split("\\},\\{");
+            
+            for (String item : items) {
+                // 清理JSON格式字符
+                item = item.replace("[", "").replace("]", "").replace("{", "").replace("}", "");
+                
+                // 解析每个字段
+                String day = extractValue(item, "day");
+                String open = extractValue(item, "open");
+                String high = extractValue(item, "high");
+                String low = extractValue(item, "low");
+                String close = extractValue(item, "close");
+                String volume = extractValue(item, "volume");
+                
+                if (day != null && !day.isEmpty()) {
+                    StockDailyData dailyData = new StockDailyData(
+                            day,
+                            parseDouble(open),
+                            parseDouble(high),
+                            parseDouble(low),
+                            parseDouble(close),
+                            parseLong(volume)
+                    );
+                    result.add(dailyData);
+                }
+            }
+        }
+        
+        return result;
+    }
+
+    /**
+     * 从JSON字符串中提取字段值
+     */
+    private String extractValue(String json, String fieldName) {
+        String pattern = "\"" + fieldName + "\":\"";
+        int startIndex = json.indexOf(pattern);
+        if (startIndex >= 0) {
+            startIndex += pattern.length();
+            int endIndex = json.indexOf("\"", startIndex);
+            if (endIndex > startIndex) {
+                return json.substring(startIndex, endIndex);
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 安全解析Double值
+     */
+    private double parseDouble(String value) {
+        try {
+            return Double.parseDouble(value);
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    /**
+     * 安全解析Long值
+     */
+    private long parseLong(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * 生成股票涨跌链接字符串
+     * 
+     * @param dataList 股票数据列表
+     * @return 涨跌链接字符串，1表示上涨，0表示下跌或平
+     */
+    public String generatePriceChangeString(List<StockDailyData> dataList) {
+        if (dataList == null || dataList.isEmpty()) {
+            return "";
+        }
+        
+        StringBuilder priceChangeBuilder = new StringBuilder();
+        for (StockDailyData data : dataList) {
+            priceChangeBuilder.append(data.getPriceChange());
+        }
+        
+        return priceChangeBuilder.toString();
+    }
+    
+    /**
+     * 将股票代码和涨跌链接字符串保存到CSV文件
+     * 
+     * @param stockCode 股票代码
+     * @param dataList  股票数据列表
+     * @param filePath  保存文件路径
+     * @param append    是否追加到现有文件
+     */
+    public void saveToCSV(String stockCode, List<StockDailyData> dataList, String filePath, boolean append) {
+        if (dataList == null || dataList.isEmpty()) {
+            System.out.println("没有数据可保存");
+            return;
+        }
+        
+        try {
+            List<String> lines = new ArrayList<>();
+            
+            // 如果是新文件或不追加，添加CSV头
+            if (!append || !Files.exists(Paths.get(filePath))) {
+                lines.add("股票代码,涨跌链接字符串");
+            }
+            
+            // 生成涨跌链接字符串
+            String priceChangeString = generatePriceChangeString(dataList);
+            
+            // 添加数据行
+            lines.add(String.format("%s,%s", stockCode, priceChangeString));
+            
+            // 写入文件（追加模式或覆盖模式）
+            if (append && Files.exists(Paths.get(filePath))) {
+                Files.write(Paths.get(filePath), lines, java.nio.file.StandardOpenOption.APPEND);
+            } else {
+                Files.write(Paths.get(filePath), lines);
+            }
+            
+            System.out.println("成功保存" + stockCode + "的涨跌链接字符串到文件: " + filePath);
+        } catch (IOException e) {
+            System.err.println("保存数据到CSV文件失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 将股票代码和涨跌链接字符串保存到CSV文件（默认覆盖模式）
+     */
+    public void saveToCSV(String stockCode, List<StockDailyData> dataList, String filePath) {
+        saveToCSV(stockCode, dataList, filePath, false);
+    }
+
+    /**
+     * 股票日线数据类
+     */
+    public static class StockDailyData {
+        private final String date;      // 日期
+        private final double open;      // 开盘价
+        private final double high;      // 最高价
+        private final double low;       // 最低价
+        private final double close;     // 收盘价
+        private final long volume;      // 成交量
+        private final String priceChange; // 收盘红绿（上涨、下跌、平）
+
+        public StockDailyData(String date, double open, double high, double low, double close, long volume) {
+            this.date = date;
+            this.open = open;
+            this.high = high;
+            this.low = low;
+            this.close = close;
+            this.volume = volume;
+            this.priceChange = calculatePriceChange(open, close);
+        }
+        
+        /**
+         * 计算价格变化状态
+         * @param open 开盘价
+         * @param close 收盘价
+         * @return 价格变化状态：2（涨停）、1（上涨）、0（下跌或平）
+         */
+        private String calculatePriceChange(double open, double close) {
+            // 计算涨幅百分比
+            double changePercent = (close - open) / open * 100;
+            
+            // 涨停判断（一般A股涨停为10%，指数无涨跌幅限制）
+            if (changePercent >= 9.5) { // 使用9.5%作为涨停判断阈值，考虑到可能有小数点误差
+                return "2";
+            } else if (close > open) {
+                return "1";
+            } else {
+                return "0";
+            }
+        }
+
+        public String getDate() {
+            return date;
+        }
+
+        public double getOpen() {
+            return open;
+        }
+
+        public double getHigh() {
+            return high;
+        }
+
+        public double getLow() {
+            return low;
+        }
+
+        public double getClose() {
+            return close;
+        }
+
+        public long getVolume() {
+            return volume;
+        }
+        
+        /**
+         * 获取收盘红绿状态
+         * @return 红（上涨）、绿（下跌）或平
+         */
+        public String getPriceChange() {
+            return priceChange;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("日期: %s, 开盘: %.2f, 最高: %.2f, 最低: %.2f, 收盘: %.2f, 成交量: %d, 涨跌: %s",
+                    date, open, high, low, close, volume, priceChange);
+        }
+    }
+
+    /**
+     * 主方法，用于测试
+     */
+    public static void main(String[] args) {
+        SinaStockDataFetcher fetcher = new SinaStockDataFetcher();
+        
+        // 测试涨停判断逻辑
+        testPriceChangeLogic();
+        
+        // 定义要获取的股票列表
+        String[] stockCodes = {
+            "sh000001", // 上证指数
+            "sz399001", // 深证成指
+            "sh601318", // 中国平安
+            "sh600519", // 贵州茅台
+            "sz000858"  // 五粮液
+        };
+        
+        // 设置日期范围
+        LocalDate endDate = LocalDate.now(); // 今天
+        LocalDate startDate = endDate.minusMonths(3); // 3个月前
+        
+        System.out.println("获取时间范围: " + startDate.format(DateTimeFormatter.ISO_LOCAL_DATE) + 
+                          " 至 " + endDate.format(DateTimeFormatter.ISO_LOCAL_DATE));
+        
+        // 所有股票数据保存到同一个文件
+        String allStocksFilePath = "./all_stocks_pattern.csv";
+        
+        // 为每只股票获取数据并保存到同一个文件
+        for (int i = 0; i < stockCodes.length; i++) {
+            String stockCode = stockCodes[i];
+            System.out.println("\n正在获取 " + stockCode + " 的日线数据...");
+            
+            // 获取股票日线数据
+            List<StockDailyData> dataList = fetcher.fetchStockDailyData(stockCode, startDate, endDate);
+            
+            if (dataList.isEmpty()) {
+                System.out.println("未获取到 " + stockCode + " 的数据");
+                continue;
+            }
+            
+            // 生成并打印涨跌链接字符串
+            String priceChangeString = fetcher.generatePriceChangeString(dataList);
+            System.out.println(stockCode + " 的涨跌链接字符串: " + priceChangeString);
+            
+            // 保存到同一个CSV文件，第一个股票不追加，后续股票追加
+            boolean append = (i > 0); // 第一个股票不追加，后续股票追加
+            fetcher.saveToCSV(stockCode, dataList, allStocksFilePath, append);
+        }
+        
+        System.out.println("\n所有数据已保存到文件: " + allStocksFilePath);
+    }
+    
+    /**
+     * 测试涨跌判断逻辑
+     */
+    private static void testPriceChangeLogic() {
+        System.out.println("\n===== 测试涨跌判断逻辑 =====");
+        
+        // 创建测试数据
+        StockDailyData data1 = new StockDailyData("2023-01-01", 100.0, 110.0, 95.0, 105.0, 1000000); // 上涨5%
+        StockDailyData data2 = new StockDailyData("2023-01-02", 100.0, 90.0, 85.0, 90.0, 1000000);  // 下跌10%
+        StockDailyData data3 = new StockDailyData("2023-01-03", 100.0, 115.0, 100.0, 110.0, 1000000); // 上涨10%（涨停）
+        StockDailyData data4 = new StockDailyData("2023-01-04", 100.0, 100.0, 100.0, 100.0, 1000000); // 平
+        
+        // 打印测试结果
+        System.out.println("上涨5%: " + data1.getPriceChange() + " (期望值: 1)");
+        System.out.println("下跌10%: " + data2.getPriceChange() + " (期望值: 0)");
+        System.out.println("上涨10%（涨停）: " + data3.getPriceChange() + " (期望值: 2)");
+        System.out.println("平: " + data4.getPriceChange() + " (期望值: 0)");
+        System.out.println("===== 测试结束 =====\n");
+    }
+}
